@@ -1,5 +1,5 @@
 // correct-test.js
-const ZKIntentSDK = require('../index');
+const ZKIntentSDK = require('shade-privacy');
 const { ethers } = require('ethers');
 
 (async () => {
