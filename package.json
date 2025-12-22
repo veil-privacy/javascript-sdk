@@ -1,5 +1,5 @@
 {
-  "name": "@shade-protocol/sdk",
+  "name": "shade-privacy",
   "version": "1.0.0-alpha.0",
   "type": "module",
   "main": "dist/index.js",
