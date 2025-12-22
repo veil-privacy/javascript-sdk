@@ -1,30 +1,29 @@
-import { Note } from '../core/notes.js';
-import { MerkleClient, MerklePath } from '../merkle/client.js';
+import { MerkleClient, MerkleProof } from '../merkle/client.js';
 import { CommitmentBuilder } from '../core/commitment_builder.js';
-import { SHADE_DOMAIN } from '../domain/constants.js';
-
-export interface PrivateInputs {
-  secret: string;
-  nullifier: string;
-  amount: string;
-  amount_decomposition: string[];
-  merkle_path: string[];
-  merkle_path_index: number;
-}
+import { Note } from '../core/notes.js';
 
 export interface PublicInputs {
-  merkle_root: string;
-  nullifier_hash: string;
-  asset_id: string;
-  relayer_fee: string;
-  protocol_fee: string;
-  recipient?: string;
+  root: string;
+  nullifier: string;
+  commitmentOut: string;
+  recipient: string;
+  fee: string;
+  // Add other public inputs as needed
 }
 
 export interface ProofInputs {
-  private: PrivateInputs;
-  public: PublicInputs;
-  circuit_id: string;
+  // Private inputs (witnesses)
+  secret: string;
+  nullifierSecret: string;
+  noteId: string;
+  amount: string;
+  bucketAmount: string;
+  assetId: string;
+  merklePath: string[];
+  merkleIndex: number;
+  
+  // Public inputs
+  publicInputs: PublicInputs;
 }
 
 export class ProofInputsAssembler {
@@ -36,9 +35,6 @@ export class ProofInputsAssembler {
     this.commitmentBuilder = commitmentBuilder;
   }
   
-  /**
-   * Assemble all inputs for proof generation
-   */
   async assemble(
     note: Note,
     options: {
@@ -47,55 +43,73 @@ export class ProofInputsAssembler {
       recipient?: string;
     } = {}
   ): Promise<ProofInputs> {
-    // Get Merkle path
-    const merklePath = await this.merkleClient.getMerklePath(note.metadata.commitment);
+    console.log('🔧 Assembling proof inputs...');
     
-    // Calculate nullifier hash
+    // Get Merkle proof
+    const merkleProof = await this.merkleClient.getProof(note.metadata.commitment);
+    
+    // Verify proof
+    const proofValid = await this.merkleClient.verifyProof(merkleProof);
+    if (!proofValid) {
+      throw new Error('Invalid Merkle proof for note commitment');
+    }
+    
+    // Generate nullifier using commitmentBuilder's calculateNullifierHash method
+    // FIXED: Use the existing method that takes (nullifier, secret)
     const nullifierHash = await this.commitmentBuilder.calculateNullifierHash(
       note.secrets.nullifier,
       note.secrets.secret
     );
     
-    // Decompose amount for range proof
-    const amountDecomposition = this.decomposeAmount(note.metadata.amount);
+    // Create output commitment
+    const commitmentOutResult = await this.commitmentBuilder.buildCommitment(
+      note.secrets.secret,
+      note.secrets.nullifier,
+      note.metadata.assetId,
+      note.metadata.bucketAmount
+    );
     
-    // Assemble private inputs
-    const privateInputs: PrivateInputs = {
-      secret: note.secrets.secret.toString(),
-      nullifier: note.secrets.nullifier.toString(),
-      amount: note.metadata.amount.toString(),
-      amount_decomposition: amountDecomposition.map(a => a.toString()),
-      merkle_path: merklePath.path,
-      merkle_path_index: merklePath.index
-    };
-    
-    // Assemble public inputs
+    // Prepare public inputs
     const publicInputs: PublicInputs = {
-      merkle_root: merklePath.root,
-      nullifier_hash: nullifierHash.toString(),
-      asset_id: note.metadata.assetId.toString(),
-      relayer_fee: (options.relayerFee || 0n).toString(),
-      protocol_fee: (options.protocolFee || 0n).toString(),
-      recipient: options.recipient
+      root: merkleProof.root,
+      nullifier: nullifierHash.toString(),
+      commitmentOut: commitmentOutResult.commitment.toString(),
+      recipient: options.recipient || '0x0',
+      fee: (options.relayerFee || 0n).toString()
     };
     
-    return {
-      private: privateInputs,
-      public: publicInputs,
-      circuit_id: 'shade_transfer_v1'
+    // Prepare private inputs (witnesses)
+    const proofInputs: ProofInputs = {
+      secret: note.secrets.secret.toString(),
+      nullifierSecret: note.secrets.nullifier.toString(),
+      noteId: note.secrets.noteId.toString(),
+      amount: note.metadata.amount.toString(),
+      bucketAmount: note.metadata.bucketAmount.toString(),
+      assetId: note.metadata.assetId.toString(),
+      merklePath: merkleProof.path,
+      merkleIndex: merkleProof.index,
+      publicInputs
     };
+    
+    console.log('✅ Proof inputs assembled');
+    console.log(`   Root: ${merkleProof.root.slice(0, 16)}...`);
+    console.log(`   Nullifier: ${nullifierHash.toString().slice(0, 16)}...`);
+    console.log(`   Merkle path length: ${merkleProof.path.length}`);
+    
+    return proofInputs;
   }
   
-  /**
-   * Decompose amount into bits for range proof
-   */
-  private decomposeAmount(amount: bigint): bigint[] {
-    const decomposition: bigint[] = [];
-    
-    for (let i = 0; i < SHADE_DOMAIN.AMOUNT_DECOMPOSITION_BITS; i++) {
-      decomposition.push((amount >> BigInt(i)) & 1n);
-    }
-    
-    return decomposition;
+  async assembleBatch(
+    notes: Note[],
+    options: {
+      relayerFee?: bigint;
+      protocolFee?: bigint;
+      recipient?: string;
+    } = {}
+  ): Promise<ProofInputs[]> {
+    const proofs = await Promise.all(
+      notes.map(note => this.assemble(note, options))
+    );
+    return proofs;
   }
 }

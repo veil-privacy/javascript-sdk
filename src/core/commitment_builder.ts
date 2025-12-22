@@ -69,6 +69,8 @@ export class CommitmentBuilder {
     console.log(`   Nullifier: 0x${nullifier.toString(16).slice(0, 16)}...`);
     console.log(`   Secret: 0x${secret.toString(16).slice(0, 16)}...`);
     
+
+    
     const nullifierHash = await this.poseidon.hash([nullifier, secret]);
     
     console.log(`🎯 Nullifier hash: 0x${nullifierHash.toString(16)}`);
