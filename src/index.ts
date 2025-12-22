@@ -1,13 +1,13 @@
-import { KeyManager } from './core/keys.js';
-import { NoteEngine, Note } from './core/notes.js';
-import { CommitmentBuilder } from './core/commitment_builder.js';
-import { PoseidonClient } from './crypto/poseidon.js';
-import { StorageManager } from './storage/manager.js';
-import { MerkleClient } from './merkle/client.js';
-import { ProofInputsAssembler, PublicInputs } from './prover/inputs.js';
-import { ExecutionBundleBuilder, ExecutionConstraints, ExecutionBundle } from './execution/bundle.js';
-import { ProofInputs } from './prover/inputs.js';
-import { SHADE_DOMAIN, AssetId } from './domain/constants.js';
+import { KeyManager } from './core/keys.ts';
+import { NoteEngine, Note } from './core/notes.ts';
+import { CommitmentBuilder } from './core/commitment_builder.ts';
+import { PoseidonClient } from './crypto/poseidon.ts';
+import { StorageManager } from './storage/manager.ts';
+import { MerkleClient } from './merkle/client.ts';
+import { ProofInputsAssembler, PublicInputs } from './prover/inputs.ts';
+import { ExecutionBundleBuilder, ExecutionConstraints, ExecutionBundle } from './execution/bundle.ts';
+import { ProofInputs } from './prover/inputs.ts';
+import { SHADE_DOMAIN, AssetId } from './domain/constants.ts';
 
 export interface SDKConfig {
   walletSignature: string;
