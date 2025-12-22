@@ -3,23 +3,40 @@ import { EncryptionService } from '../crypto/encryption.js';
 class NodeStorageAdapter {
     constructor(walletSignature) {
         this.data = new Map();
-        const fs = require('fs');
-        const path = require('path');
-        const os = require('os');
-        const notesDir = path.join(os.homedir(), '.shade', 'notes');
-        if (!fs.existsSync(notesDir)) {
-            fs.mkdirSync(notesDir, { recursive: true });
-        }
-        this.filePath = path.join(notesDir, `${walletSignature.slice(0, 16)}.json`);
-        this.loadFromFile();
+        this.filePath = '';
+        this.notesDir = '';
+        // Initialize synchronously in constructor
+        this.initFileSystem(walletSignature);
     }
-    loadFromFile() {
-        const fs = require('fs');
+    async initFileSystem(walletSignature) {
+        // Dynamic imports for Node.js modules
+        if (typeof window !== 'undefined') {
+            throw new Error('NodeStorageAdapter can only be used in Node.js environment');
+        }
         try {
+            const fs = await import('node:fs');
+            const path = await import('node:path');
+            const os = await import('node:os');
+            this.notesDir = path.join(os.homedir(), 'shade', 'notes');
+            // Ensure directory exists
+            if (!fs.existsSync(this.notesDir)) {
+                fs.mkdirSync(this.notesDir, { recursive: true });
+            }
+            this.filePath = path.join(this.notesDir, `${walletSignature.slice(0, 16)}.json`);
+            await this.loadFromFile();
+        }
+        catch (error) {
+            console.warn('⚠️ Failed to initialize filesystem storage:', error);
+        }
+    }
+    async loadFromFile() {
+        try {
+            const fs = await import('node:fs');
             if (fs.existsSync(this.filePath)) {
                 const content = fs.readFileSync(this.filePath, 'utf8');
                 const data = JSON.parse(content);
                 this.data = new Map(Object.entries(data));
+                console.log(`📁 Loaded ${this.data.size} notes from ${this.filePath}`);
             }
         }
         catch (error) {
@@ -27,9 +44,9 @@ class NodeStorageAdapter {
             this.data = new Map();
         }
     }
-    saveToFile() {
-        const fs = require('fs');
+    async saveToFile() {
         try {
+            const fs = await import('node:fs');
             const data = Object.fromEntries(this.data);
             fs.writeFileSync(this.filePath, JSON.stringify(data, null, 2), 'utf8');
         }
@@ -45,15 +62,15 @@ class NodeStorageAdapter {
     }
     async put(key, value) {
         this.data.set(key, value);
-        this.saveToFile();
+        await this.saveToFile();
     }
     async delete(key) {
         this.data.delete(key);
-        this.saveToFile();
+        await this.saveToFile();
     }
     async clear() {
         this.data.clear();
-        this.saveToFile();
+        await this.saveToFile();
     }
     async getAllByIndex(indexName, value) {
         const allNotes = await this.getAll();
@@ -131,14 +148,28 @@ export class StorageManager {
         this.storageKey = await this.encryption.deriveStorageKey(walletSignature);
         // Initialize appropriate storage adapter
         if (this.isNode) {
+            console.log('💾 Initializing Node.js file system storage...');
             this.adapter = new NodeStorageAdapter(walletSignature);
-            console.log('💾 Node.js storage initialized');
+            // Wait a bit for initialization
+            await new Promise(resolve => setTimeout(resolve, 100));
+            console.log('✅ Node.js storage initialized');
+            // Show storage location
+            try {
+                const os = await import('node:os');
+                const path = await import('node:path');
+                const notesDir = path.join(os.homedir(), 'shade', 'notes');
+                console.log(`📁 Storage directory: ${notesDir}`);
+            }
+            catch (error) {
+                console.log('📁 Notes stored in: ~/shade/notes/');
+            }
         }
         else {
+            console.log('💾 Initializing browser storage...');
             const browserAdapter = new BrowserStorageAdapter();
             await browserAdapter.initialize();
             this.adapter = browserAdapter;
-            console.log('💾 Browser storage initialized');
+            console.log('✅ Browser storage initialized');
         }
     }
     getStorageKey() {
@@ -172,10 +203,8 @@ export class StorageManager {
             updatedAt: Date.now()
         };
         await adapter.put(storedNote.commitment, storedNote);
-        // In Node.js, also create backup
-        if (this.isNode) {
-            await this.backupToFilesystem(storedNote);
-        }
+        console.log(`💾 Note saved to ${this.isNode ? 'file system' : 'IndexedDB'}`);
+        console.log(`   Commitment: ${storedNote.commitment.slice(0, 16)}...`);
         return storedNote.commitment;
     }
     async getNote(commitment) {
@@ -220,6 +249,7 @@ export class StorageManager {
                 metadata: stored.metadata
             };
         }));
+        console.log(`📊 Found ${notes.length} unspent note(s)`);
         return notes;
     }
     async markAsSpent(commitment) {
@@ -229,6 +259,7 @@ export class StorageManager {
             stored.spent = true;
             stored.updatedAt = Date.now();
             await adapter.put(commitment, stored);
+            console.log(`✅ Note marked as spent: ${commitment.slice(0, 16)}...`);
         }
     }
     async getAllNotes() {
@@ -238,27 +269,33 @@ export class StorageManager {
     async clearAll() {
         const adapter = this.getAdapter();
         await adapter.clear();
+        console.log('🗑️ All notes cleared from storage');
     }
-    async backupToFilesystem(note) {
-        try {
-            const fs = require('fs/promises');
-            const path = require('path');
-            const os = require('os');
-            const notesDir = path.join(os.homedir(), '.shade', 'backups');
-            await fs.mkdir(notesDir, { recursive: true });
-            const filename = `note_${note.commitment.slice(0, 16)}_${Date.now()}.json`;
-            const filepath = path.join(notesDir, filename);
-            await fs.writeFile(filepath, JSON.stringify(note, null, 2), 'utf8');
-            console.log(`💾 Note backed up to: ${filepath}`);
+    async listNotes() {
+        if (this.isNode) {
+            try {
+                const fs = await import('node:fs/promises');
+                const path = await import('node:path');
+                const os = await import('node:os');
+                const notesDir = path.join(os.homedir(), 'shade', 'notes');
+                const files = await fs.readdir(notesDir);
+                return files.filter(file => file.endsWith('.json'));
+            }
+            catch (error) {
+                console.warn('⚠️ Could not list notes:', error);
+                return [];
+            }
         }
-        catch (error) {
-            console.warn('⚠️ Filesystem backup failed:', error);
+        else {
+            const notes = await this.getAllNotes();
+            return notes.map(note => `${note.commitment}.json`);
         }
     }
     getStatus() {
         return {
             initialized: !!this.adapter && !!this.storageKey,
             environment: this.isNode ? 'node' : 'browser',
+            storageType: this.isNode ? 'file system (~/shade/notes/)' : 'IndexedDB',
             hasKey: !!this.storageKey,
             hasAdapter: !!this.adapter
         };

@@ -23,10 +23,11 @@ export declare class StorageManager {
     markAsSpent(commitment: string): Promise<void>;
     getAllNotes(): Promise<StoredNote[]>;
     clearAll(): Promise<void>;
-    private backupToFilesystem;
+    listNotes(): Promise<string[]>;
     getStatus(): {
         initialized: boolean;
         environment: string;
+        storageType: string;
         hasKey: boolean;
         hasAdapter: boolean;
     };
