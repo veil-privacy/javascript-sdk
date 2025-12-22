@@ -4,8 +4,9 @@ import { CommitmentBuilder } from './core/commitment_builder.js';
 import { PoseidonClient } from './crypto/poseidon.js';
 import { StorageManager } from './storage/manager.js';
 import { MerkleClient } from './merkle/client.js';
-import { ProofInputsAssembler } from './prover/inputs.js';
-import { ExecutionBundleBuilder } from './execution/bundle.js';
+import { ProofInputsAssembler, PublicInputs } from './prover/inputs.js';
+import { ExecutionBundleBuilder, ExecutionConstraints, ExecutionBundle } from './execution/bundle.js';
+import { ProofInputs } from './prover/inputs.js';
 import { SHADE_DOMAIN, AssetId } from './domain/constants.js';
 
 export interface SDKConfig {
@@ -16,6 +17,7 @@ export interface SDKConfig {
 }
 
 export class ShadeSDK {
+  private config: SDKConfig;
   private poseidonClient: PoseidonClient;
   private merkleClient: MerkleClient;
   private commitmentBuilder: CommitmentBuilder;
@@ -29,6 +31,8 @@ export class ShadeSDK {
     if (!config.walletSignature) {
       throw new Error('walletSignature is required');
     }
+    
+    this.config = config;
     
     // Initialize clients
     this.poseidonClient = new PoseidonClient(config.poseidonUrl);
@@ -68,7 +72,7 @@ export class ShadeSDK {
     commitment: bigint;
     bucketAmount: bigint;
   }> {
-    console.log(`📝 Creating note: ${SHADE_DOMAIN.ASSETS[assetId]} ${amount}`);
+    console.log(`📝 Creating note: ${amount} of asset ${assetId}`);
     
     const note = await this.noteEngine.createNote(assetId, amount);
     const storageId = await this.storage.storeNote(note);
@@ -155,10 +159,10 @@ export class ShadeSDK {
   getStatus() {
     return {
       version: '1.0.0',
-      initialized: !!this.storage,
+      initialized: true,
       services: {
-        poseidon: this.poseidonClient ? 'connected' : 'disconnected',
-        merkle: this.merkleClient ? 'connected' : 'disconnected'
+        poseidon: 'connected',
+        merkle: 'connected'
       }
     };
   }
