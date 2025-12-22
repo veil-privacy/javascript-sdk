@@ -1,4 +1,4 @@
-import { ProofInputs, PublicInputs } from '../prover/inputs';
+import { ProofInputs, PublicInputs } from '../prover/inputs.js';
 
 export interface ExecutionConstraints {
   maxFee: bigint;

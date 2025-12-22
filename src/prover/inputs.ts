@@ -1,7 +1,7 @@
-import { Note } from '../core/notes';
-import { MerkleClient, MerklePath } from '../merkle/client';
-import { CommitmentBuilder } from '../core/commitment_builder';
-import { SHADE_DOMAIN } from '../domain/constants';
+import { Note } from '../core/notes.js';
+import { MerkleClient, MerklePath } from '../merkle/client.js';
+import { CommitmentBuilder } from '../core/commitment_builder.js';
+import { SHADE_DOMAIN } from '../domain/constants.js';
 
 export interface PrivateInputs {
   secret: string;
