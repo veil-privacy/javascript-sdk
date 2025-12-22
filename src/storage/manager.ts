@@ -1,7 +1,21 @@
-import { openDB, IDBPDatabase } from 'idb';
-import { EncryptionService, EncryptedData } from '../crypto/encryption';
-import { Note, NoteMetadata } from '../core/notes';
-import { NoteSecrets } from '../core/keys';
+import { openDB, IDBPDatabase, DBSchema, StoreNames, StoreKey, StoreValue } from 'idb';
+import { EncryptionService, EncryptedData } from '../crypto/encryption.js';
+import { Note, NoteMetadata } from '../core/notes.js';
+import { NoteSecrets } from '../core/keys.js';
+
+// Define the database schema
+interface ShadeDBSchema extends DBSchema {
+  notes: {
+    key: string; // commitment
+    value: StoredNote;
+    indexes: {
+      'spent': boolean;
+      'assetId': string;
+      'createdAt': number;
+      'spent_asset': [boolean, string];
+    };
+  };
+}
 
 interface StoredNote {
   commitment: string;
@@ -13,7 +27,7 @@ interface StoredNote {
 }
 
 export class StorageManager {
-  private db: IDBPDatabase | null = null;
+  private db: IDBPDatabase<ShadeDBSchema> | null = null;
   private encryption: EncryptionService;
   private storageKey: CryptoKey | null = null;
   
@@ -28,9 +42,11 @@ export class StorageManager {
     // Derive encryption key
     this.storageKey = await this.encryption.deriveStorageKey(walletSignature);
     
-    // Initialize IndexedDB
-    this.db = await openDB('shade-notes', 2, {
-      upgrade(db, oldVersion, newVersion) {
+    // Initialize IndexedDB with proper typing
+    this.db = await openDB<ShadeDBSchema>('shade-notes', 2, {
+      upgrade(db, oldVersion, newVersion, transaction) {
+        console.log(`Upgrading database from version ${oldVersion} to ${newVersion}`);
+        
         if (oldVersion < 1) {
           // Version 1: initial schema
           const store = db.createObjectStore('notes', { keyPath: 'commitment' });
@@ -41,7 +57,7 @@ export class StorageManager {
         
         if (oldVersion < 2) {
           // Version 2: add composite index for queries
-          const store = db.transaction.objectStore('notes');
+          const store = transaction.objectStore('notes');
           store.createIndex('spent_asset', ['spent', 'metadata.assetId']);
         }
       }
@@ -121,20 +137,19 @@ export class StorageManager {
       throw new Error('Storage not initialized');
     }
     
-    let index: IDBIndex;
-    let range: IDBKeyRange | undefined;
+    let storedNotes: StoredNote[] = [];
     
     if (assetId !== undefined) {
       // Query unspent notes for specific asset
-      index = this.db.transaction('notes').store.index('spent_asset');
-      range = IDBKeyRange.bound([false, assetId.toString()], [false, assetId.toString()]);
+      const assetIdStr = assetId.toString();
+      storedNotes = await this.db.getAllFromIndex('notes', 'spent_asset', IDBKeyRange.bound(
+        [false, assetIdStr],
+        [false, assetIdStr]
+      ));
     } else {
       // Query all unspent notes
-      index = this.db.transaction('notes').store.index('spent');
-      range = IDBKeyRange.only(false);
+      storedNotes = await this.db.getAllFromIndex('notes', 'spent', false);
     }
-    
-    const storedNotes = await index.getAll(range);
     
     // Decrypt all notes
     const notes = await Promise.all(
@@ -178,10 +193,27 @@ export class StorageManager {
   }
   
   /**
+   * Get all notes (for debugging)
+   */
+  async getAllNotes(): Promise<StoredNote[]> {
+    if (!this.db) throw new Error('Storage not initialized');
+    return this.db.getAll('notes');
+  }
+  
+  /**
+   * Clear all notes (for testing)
+   */
+  async clearAll(): Promise<void> {
+    if (!this.db) throw new Error('Storage not initialized');
+    await this.db.clear('notes');
+  }
+  
+  /**
    * Backup note to filesystem (Node only)
    */
   private async backupToFilesystem(note: StoredNote): Promise<void> {
-    if (typeof window !== 'undefined') return; // Browser only
+    // Skip in browser
+    if (typeof window !== 'undefined') return;
     
     try {
       const fs = await import('fs/promises');
@@ -191,7 +223,7 @@ export class StorageManager {
       const notesDir = path.join(homedir(), '.shade', 'notes');
       await fs.mkdir(notesDir, { recursive: true });
       
-      const filename = `note_${note.commitment}on`;
+      const filename = `note_${note.commitment.slice(0, 16)}.json`;
       const filepath = path.join(notesDir, filename);
       
       await fs.writeFile(filepath, JSON.stringify(note, null, 2), 'utf8');
@@ -199,5 +231,39 @@ export class StorageManager {
     } catch (error) {
       console.warn('⚠️ Filesystem backup failed:', error);
     }
+  }
+  
+  /**
+   * Export all notes (for backup)
+   */
+  async exportNotes(): Promise<string> {
+    if (!this.db || !this.storageKey) {
+      throw new Error('Storage not initialized');
+    }
+    
+    const allNotes = await this.getAllNotes();
+    const exportData = {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      notes: allNotes
+    };
+    
+    return JSON.stringify(exportData, null, 2);
+  }
+  
+  /**
+   * Import notes (for restore)
+   */
+  async importNotes(jsonData: string): Promise<void> {
+    if (!this.db) throw new Error('Storage not initialized');
+    
+    const importData = JSON.parse(jsonData);
+    const tx = this.db.transaction('notes', 'readwrite');
+    
+    for (const note of importData.notes) {
+      await tx.store.put(note);
+    }
+    
+    await tx.done;
   }
 }
