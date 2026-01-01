@@ -1,3 +1,5 @@
+
+
 import { NoteEngine, Note, NoteStatus } from "./core/notes.js";
 import { CommitmentBuilder } from "./core/commitment_builder.js";
 import { PoseidonDomain, AssetId } from "./domain/constants.js";
