@@ -8,11 +8,9 @@ export interface PublicInputs {
   commitmentOut: string;
   recipient: string;
   fee: string;
-  // Add other public inputs as needed
 }
 
 export interface ProofInputs {
-  // Private inputs (witnesses)
   secret: string;
   nullifierSecret: string;
   noteId: string;
@@ -22,7 +20,6 @@ export interface ProofInputs {
   merklePath: string[];
   merkleIndex: number;
   
-  // Public inputs
   publicInputs: PublicInputs;
 }
 

@@ -26,7 +26,6 @@ export class ShadeSDK {
   private bundleBuilder: ExecutionBundleBuilder;
   
   constructor(config: SDKConfig) {
-    // Validate config
     if (!config.walletSignature) {
       throw new Error('walletSignature is required');
     }
@@ -46,7 +45,7 @@ export class ShadeSDK {
   }
   
   /**
-   * Initialize SDK (must be called first)
+    Initialize SDK (must be called first)
    */
   async initialize(): Promise<void> {
     console.log('🔧 Initializing Shade SDK...');
